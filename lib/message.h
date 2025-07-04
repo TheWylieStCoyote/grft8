@@ -8,6 +8,7 @@
 #ifndef MESSAGE_H
 #define MESSAGE_H
 
+#include <ft8/api.h>
 #include <gnuradio/logger.h>
 #include <string>
 #include <vector>
@@ -17,7 +18,7 @@ namespace gr
 class logger;
 }
 
-class message
+class FT8_API message
 {
 public:
   enum class message_type

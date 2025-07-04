@@ -13,6 +13,7 @@
 #include <sstream>
 #include <string_view>
 #include <gmpxx.h>
+#include <fstream>
 
 ft8_encoder::ft8_encoder () : d_logger ("FT8_encoding")
 {
@@ -67,17 +68,212 @@ ft8_encoder::bitfields (const message &message)
     }
 }
 
+//std::vector<float> 
 void
+ft8_encoder::encode_ft8_complete(std::bitset<77> message_bits)
+{
+  std::bitset<91> crc = calc_crc(message_bits);
+  std::bitset<174> ldpc = apply_ldpc(crc);
+  std::vector<int> symbols = bits_to_fsk8(ldpc);
+  //std::vector<float> generate_ft8(const std::vector<int>& symbols);
+}
+
+std::vector<int> 
+ft8_encoder::bits_to_fsk8(const std::bitset<174>& ldpc_bits)
+{
+    //from table in docs
+    const int gray_map[8] = {0 /*000*/, 1/*001*/, 3/*010*/, 2/*011*/, 7/*111*/, 6/*110*/, 4/*100*/, 5/*101*/}; 
+    std::vector<int> symbols;
+    symbols.reserve(58); // (174/3 = 58)
+
+    //process bits in 3
+    for (int i = 0; i < 174; i += 3){
+        int bit_trio = 0;
+        // converts to 0-7 range
+        bit_trio |= (ldpc_bits[i] ? 1 : 0) <<2; //ie. 0000 to 0100 = 4
+        bit_trio |= (ldpc_bits[i+1] ? 1 : 0) <<1;
+        bit_trio |= (ldpc_bits[i+2] ? 1 : 0);
+
+        int channel_symbol = gray_map[bit_trio];
+        symbols.push_back(channel_symbol);
+    }
+
+    //array from docs
+    const std::vector<int> S = {3,1,4,0,6,5,2}; //sync sequence, consta's array
+    const std::vector<int> Ma(symbols.begin(), symbols.begin() + 29);
+    const std::vector<int> Mb(symbols.begin() + 29, symbols.end());
+
+
+    //transmission sequence (from docs): S + Ma + S + Mb + S
+    std::vector<int> transmit_symbols;
+    transmit_symbols.reserve(79); //3 + 29 + 3 + 39 + 3 = 79
+
+    transmit_symbols.insert(transmit_symbols.end(), S.begin(), S.end());
+    transmit_symbols.insert(transmit_symbols.end(), Ma.begin(), Ma.end());
+    transmit_symbols.insert(transmit_symbols.end(), S.begin(), S.end());
+    transmit_symbols.insert(transmit_symbols.end(), Mb.begin(), Mb.end());
+    transmit_symbols.insert(transmit_symbols.end(), S.begin(), S.end());
+    
+    /*std::vector<bool> result;
+    result.reserve(transmit_symbols.size() * 3);
+
+    for (int symbol: transmit_symbols) {
+        result.push_back((symbol >> 2) & 1); 
+        result.push_back((symbol >> 1) & 1);
+        result.push_back(symbol & 1); 
+    }
+
+    return result;*/
+
+    return transmit_symbols;
+}
+
+std::bitset<174>
+ft8_encoder::apply_ldpc(const std::bitset<91>& crc_bits)
+{
+    auto generator = load_generator_matrix("generator.dat");
+    std::bitset<174> complete_msg;
+
+    for (int i = 0; i<91; i++){
+        complete_msg[i] = crc_bits[i];
+    }
+    
+    for (int parity_bit = 0; parity_bit <83; parity_bit++){
+        bool parity_val = 0;
+        for (int i = 0; i < 91; i++) {
+            if (generator[parity_bit][i] && crc_bits[i]) {
+                parity_val = !parity_val;
+            }
+        }
+        complete_msg[91 + parity_bit] = parity_val;
+    }
+    return complete_msg;
+}
+
+std::vector<std::bitset<91>> 
+ft8_encoder::load_generator_matrix(const std::string& filename)
+{
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        d_logger.error("Cannot open file for generator: {} ", filename);
+    }
+
+    std::vector<std::bitset<91>> generator_matrix;
+    generator_matrix.reserve(83);
+    
+    std::string line;
+    int row = 0;
+
+    while (std::getline(file, line) && row < 83) {
+        if (line.empty()) continue;
+        if (line.length() >= 91) {
+            bool is_binary_line = true;
+            for (int i = 0; i < 91 && is_binary_line; i++) {
+                if (line[i] != '0' && line[i] != '1') {
+                    is_binary_line = false;
+                }
+            }
+            
+            if (is_binary_line) {
+                std::bitset<91> m_row;
+                for (int col = 0; col < 91; col++) {
+                    m_row[col] = (line[col] == '1');
+                }
+                generator_matrix.push_back(m_row);
+                row++;
+            }
+        }
+    }
+
+    if (row != 83) {
+        d_logger.error("Invalid row count, expected 83 rows");
+    }
+    
+    return generator_matrix;
+}
+
+std::bitset<91>
+ft8_encoder::calc_crc(const std::bitset<77>& message_bits) 
+{
+    //basically a 14-bit shift register
+    //if bits fall of the left edge
+    //it trigger the polynomial correction
+    //so these other bits in the register are flipped using the XOR
+    //it's like a conveyer belt of bits 
+
+    constexpr uint16_t crc_polynomial = 0x6757;
+    constexpr uint16_t crc_start_val = 0x0000;
+    constexpr uint16_t crc_14bit_mask = 0x3FFF; //00 + (1*14)
+    constexpr uint16_t crc_msb_mask = 0x2000; //only bit 13 set
+   
+    uint16_t crc_register = crc_start_val;
+
+    for (size_t i = 0; i<77; ++i){ //i = bit index
+        bool input_bit = message_bits[76 - i]; //most significant bit order for ft8
+        bool overflow_bit = (crc_register & crc_msb_mask) != 0; //is bit 13 set to 1 (check before shift left to bit 14 and fall of register)
+
+        crc_register <<= 1;
+        crc_register &= crc_14bit_mask; //keep only 14 bits
+
+        if (input_bit) { //input bit to least significant position (right)
+            crc_register  ^= 1;
+        }
+        
+        if (overflow_bit) {
+            crc_register ^= crc_polynomial;
+        }
+    }
+    
+    std::bitset<91> complete_msg;
+    for (size_t i=0; i<77; ++i) {
+        complete_msg[i] = message_bits[i];
+    }
+    for (size_t i=0; i<77; ++i) {
+        complete_msg[77 + i] = (crc_register >> i) & 1; //move to lsp + mask w/ 1
+    }
+    
+    d_logger.info("91-bit FT8 msg with CRC14 created");
+    return complete_msg;
+}
+
+void pack_bits(std::bitset<77>& bits, int& bit_pos, uint64_t val, int num_bits)
+{
+  for (int i = num_bits - 1; i >=0; --i) {
+    bits[bit_pos++] = (val >> i) & 1;
+  }
+}
+
+std::bitset<77>
 ft8_encoder::encode_standard (const message &message)
 {
   std::string temp_msg = message.get_message ();
-  std::bitset<28> c28a = 0, c28b = 0;
-  std::bitset<1> r1 = 0, R1 = 0;
-  std::bitset<15> g15 = 0;
-
+  uint32_t c28a = 0, c28b = 0;
+  bool r1 = 0, R1 = 0;
+  uint16_t g15 = 0;
+  uint8_t i3 = 1;
+  
+  //encode first call sign
   c28a = encode_28 (temp_msg, message);
+  //encode second call sign
   c28b = encode_28 (temp_msg, message);
-  g15 = g4_to_15 (message);
+  g15 = g4_to_15 (temp_msg, message);
+  r1 = encode_r1(temp_msg);
+  R1 = encode_R1(temp_msg);
+
+  std::bitset<77> message_bits;
+  int bit_pos = 0;
+
+  pack_bits(message_bits, bit_pos, c28a, 28);
+  pack_bits(message_bits, bit_pos, c28b, 28);
+  pack_bits(message_bits, bit_pos, r1, 1);
+  pack_bits(message_bits, bit_pos, R1, 1);
+  pack_bits(message_bits, bit_pos, g15, 15);
+  pack_bits(message_bits, bit_pos, i3, 3);
+
+  d_logger.info("77-bit ft8 assembed");
+  
+  //encode_ft8_complete(message_bits); 
+  return message_bits;
 }
 
 uint32_t
@@ -270,10 +466,9 @@ ft8_encoder::free_text_to_f71 (std::string &msg)
 }
 
 uint16_t
-ft8_encoder::g4_to_15 (const message &message)
+ft8_encoder::g4_to_15 (std::string &temp_msg, const message &message)
 { // in original protocol RRR, RR73, and 73 are also encoded here, removed
   // because it is redundant
-  std::string temp_msg = message.get_message ();
   std::istringstream keywords (temp_msg);
   std::string keyword;
 
@@ -359,6 +554,18 @@ ft8_encoder::encode_r1 (std::string &msg)
 }
 
 bool
+ft8_encoder::encode_R1(std::string &msg)
+{
+  std::regex r_one(R"(\bR\s+)");
+  if (std::regex_search(msg, r_one))
+    {
+      msg = std::regex_replace(msg, r_one, "");
+      return true;
+    }
+  return false;
+}
+
+bool
 ft8_encoder::encode_t1 (std::string &msg)
 {
   if (msg.substr (0, 3) == "TU")
@@ -387,5 +594,7 @@ ft8_encoder::encode_sigreport (std::string &msg)
   int db = std::stoi (msg);
   return (db + 30) / 2;
 }
+
+
 // signal reports are only allowed for even numbers,
 // handle contest formats??
