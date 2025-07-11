@@ -11,6 +11,7 @@
 #include <gnuradio/ft8/encoder.h>
 #include "message.h"
 #include <string>
+#include <vector>
 
 namespace gr {
   namespace ft8 {
@@ -19,6 +20,11 @@ namespace gr {
     {
      private:
         message d_message_obj;
+        std::vector<float> d_waveform;
+        size_t d_sample_idx;
+        bool d_waveform_generated;
+        
+        void generate_waveform();
     
      public:
       encoder_impl(std::string message_text);

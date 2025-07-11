@@ -14,6 +14,7 @@
 #include <string_view>
 #include <gmpxx.h>
 #include <fstream>
+#include <cmath>
 
 ft8_encoder::ft8_encoder () : d_logger ("FT8_encoding")
 {
@@ -68,14 +69,72 @@ ft8_encoder::bitfields (const message &message)
     }
 }
 
-//std::vector<float> 
-void
+std::vector<float>
+ft8_encoder::generate_ft8_waveform(const std::vector<int>& symbols, int sample_rate)
+{
+    int samples_per_symbol = sample_rate/static_cast<int>(baud_rate);
+    std::vector<float> pulse = gaussian_pulse(samples_per_symbol, gaussian_bt);    
+    
+    int tot_samples = (symbols.size() + 4) * samples_per_symbol; //4 extra bymbol periods of padding
+    std::vector<float> waveform(tot_samples, 0.0f); 
+
+    std::vector<float> padded_symbols;
+    padded_symbols.push_back(symbols[0]);
+    padded_symbols.insert(padded_symbols.end(), symbols.begin(), symbols.end());
+    padded_symbols.push_back(symbols.back());
+
+    //eq1 from docs: fd(t) = h*sum(bn*p(t-nT))
+    int s = 0; //start smaple
+    for (int symbol: padded_symbols) {
+        for (size_t i = 0; i<pulse.size() && (s + i) <waveform.size(); ++i){
+            waveform[s + i] += symbol*pulse[i]*freq_shift;
+        }
+        s += samples_per_symbol;
+    }
+
+    int output_len = symbols.size() * samples_per_symbol;
+    int skip_padding = 2*samples_per_symbol;
+    
+    std::vector<float> output(output_len);
+    std::copy(waveform.begin() + skip_padding,
+              waveform.begin() + skip_padding + output_len,
+              output.begin());
+   
+    return output;
+}
+
+std::vector<float>
+ft8_encoder::gaussian_pulse(int samples_per_symbol, float bt)
+{
+    int pulse_len = 3*samples_per_symbol;
+    std::vector<float> pulse(pulse_len);
+
+    //eq3 from docs: p(t) = (1/2T) * [erf(kBT(t+0.5)/T) - erf(kBT(t-0.5)/T)]
+    //from docs k = 5.336
+    
+    float k = std::sqrt(2.0f/std::log(2.0f));
+
+    float erf_coeff = k*bt;
+    float norm = 0.5f; // 1/2T -> T=1
+
+    for (int i=0; i<pulse_len; ++i){
+        float t = (static_cast<float>(i) / samples_per_symbol) - 1.5f;
+        float erf_plus = std::erf(erf_coeff * (t+0.5f));
+        float erf_minus = std::erf(erf_coeff * (t-0.5f));
+        pulse[i] = norm * (erf_plus - erf_minus);
+    }
+    
+    return pulse;
+}
+
+std::vector<float> 
 ft8_encoder::encode_ft8_complete(std::bitset<77> message_bits)
 {
   std::bitset<91> crc = calc_crc(message_bits);
   std::bitset<174> ldpc = apply_ldpc(crc);
   std::vector<int> symbols = bits_to_fsk8(ldpc);
-  //std::vector<float> generate_ft8(const std::vector<int>& symbols);
+  std::vector<float> waveform = generate_ft8_waveform(symbols, sample_rate_const);
+  return waveform;
 }
 
 std::vector<int> 
@@ -228,8 +287,8 @@ ft8_encoder::calc_crc(const std::bitset<77>& message_bits)
     for (size_t i=0; i<77; ++i) {
         complete_msg[i] = message_bits[i];
     }
-    for (size_t i=0; i<77; ++i) {
-        complete_msg[77 + i] = (crc_register >> i) & 1; //move to lsp + mask w/ 1
+    for (size_t i=0; i<13; ++i) {
+        complete_msg[77 + i] = (crc_register >> (13-i)) & 1; //move to msp + mask w/ 1
     }
     
     d_logger.info("91-bit FT8 msg with CRC14 created");

@@ -8,6 +8,7 @@
 #include <gnuradio/io_signature.h>
 #include "encoder_impl.h"
 #include "message.h"
+#include "ft8_encoder.h"
 
 namespace gr {
   namespace ft8 {
@@ -28,10 +29,13 @@ namespace gr {
       : gr::sync_block("encoder",
               gr::io_signature::make(0, 0, 0),
               gr::io_signature::make(1 /* min outputs */, 1 /*max outputs */, sizeof(output_type))),
-    d_message_obj(message_text)
+    d_message_obj(message_text),
+    d_sample_idx(0),
+    d_waveform_generated(false)
     {
         // Message preprocessing is handled by the message object constructor
-        d_logger->info("Encoder initialized with message: {}", d_message_obj.get_message());
+        d_logger->info("Encoder message: {}", d_message_obj.get_message());
+        generate_waveform();
     }
 
     /*
@@ -50,6 +54,19 @@ namespace gr {
     {
         return d_message_obj.get_message();
     }
+    void encoder_impl::generate_waveform()
+    {
+        try {
+            ft8_encoder encoder;
+            std::bitset<77> message_bits = encoder.encode_standard(d_message_obj);
+            d_waveform = encoder.encode_ft8_complete(message_bits);
+            d_waveform_generated = true;
+            d_logger->info("FT8 waveform generated with {} samples", d_waveform.size());
+        } catch (const std::exception& e) {
+            d_logger->error(e.what());
+            d_waveform_generated = false;
+        }
+    }
 
     int
     encoder_impl::work(int noutput_items,
@@ -57,13 +74,25 @@ namespace gr {
         gr_vector_void_star &output_items)
     {
       auto out = static_cast<output_type*>(output_items[0]);
+      if (! d_waveform_generated || d_waveform.empty()) {
+        std::fill(out, out+noutput_items, 0.0f);
+        return noutput_items;
+      }
 
-      #pragma message("Implement the signal processing in your block and remove this warning")
-      // Do <+signal processing+>
-
+      int to_output = 0;
+      
+      for(int i = 0; i<noutput_items; ++i) {
+        if (d_sample_idx < d_waveform.size()){
+            out[i] = d_waveform[d_sample_idx];
+            d_sample_idx++;
+            to_output++;
+        } else {
+            out[i] = 0.0f;
+            to_output++;
+        }
       // Tell runtime system how many output items we produced.
-      return noutput_items;
+      return to_output;
     }
-
+   }
   } /* namespace ft8 */
 } /* namespace gr */
