@@ -23,7 +23,8 @@
 
 static gr::logger test_logger("FT8_QA");
 
-std::vector<std::vector<int>> load_parity_check_matrix(
+std::vector<std::vector<int>> 
+load_parity_check_matrix(
     const std::string& filename) {
   std::vector<std::vector<int>> H(83, std::vector<int>(174, 0));
   std::ifstream file(filename);
@@ -69,7 +70,8 @@ std::vector<std::vector<int>> load_parity_check_matrix(
 }
 
 // Function to perform parity check: H × codeword^T = 0
-std::vector<int> perform_parity_check(const std::vector<std::vector<int>>& H,
+std::vector<int> 
+perform_parity_check(const std::vector<std::vector<int>>& H,
                                       const std::bitset<174>& codeword) {
   std::vector<int> parity_results(83, 0);
 
@@ -105,7 +107,7 @@ BOOST_AUTO_TEST_CASE(test_ldpc_parity_check_validation) {
   test_logger.info(
       "77-bit message encoded, CRC applied, LDPC encoded to 174 bits");
 
-  // Perform parity check
+ // Perform parity check
   std::vector<int> parity_results = perform_parity_check(H, ldpc_codeword);
 
   // Check if parity results is all zeros (valid codeword)
