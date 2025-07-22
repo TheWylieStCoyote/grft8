@@ -27,8 +27,8 @@ public:
   ft8_encoder ();
   ft8_encoder (const message &message);
  
-  std::vector<float> generate_ft8_waveform (const std::vector<int>& symbols, int sample_rate);
-  std::vector<float> gaussian_pulse (int samples_per_symbol, float bt);
+  // std::vector<float> generate_ft8_waveform (const std::vector<int>& symbols, int sample_rate);
+  // std::vector<float> gaussian_pulse (int samples_per_symbol, float bt);
  
   uint32_t encode_28 (std::string &temp_msg, const message &message);
   uint32_t std_call_to_28 (std::string &msg);
@@ -44,7 +44,7 @@ public:
   //void encode_euvhfx (const message &message);
   //void encode_free_text (const message &message);
 
-  std::vector<float> encode_ft8_complete (std::bitset<77> message_bits);
+  // std::vector<float> encode_ft8_complete (std::bitset<77> message_bits);
   std::bitset<91> calc_crc (const std::bitset<77>& message_bits);
   std::bitset<174> apply_ldpc (const std::bitset<91>& crc_bits);
   std::vector<std::bitset<91>> load_generator_matrix (const std::string& filename);

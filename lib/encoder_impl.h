@@ -12,6 +12,8 @@
 #include "message.h"
 #include <string>
 #include <vector>
+#include <algorithm>  
+#include <bitset>   
 
 namespace gr {
   namespace ft8 {
@@ -23,18 +25,17 @@ namespace gr {
         std::vector<float> d_waveform;
         size_t d_sample_idx;
         bool d_waveform_generated;
-        
+
         void generate_waveform();
-    
+        std::vector<float> generate_rectangular_fsk(const std::vector<int>& symbols);
+        
      public:
       encoder_impl(std::string message_text);
       ~encoder_impl();
 
-      // Convenience methods to access message functionality
       message::message_type get_message_type();
       const std::string& get_processed_message();
 
-      // Where all the action really happens
       int work(
               int noutput_items,
               gr_vector_const_void_star &input_items,

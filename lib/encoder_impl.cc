@@ -13,18 +13,14 @@
 namespace gr {
   namespace ft8 {
 
-    #pragma message("set the following appropriately and remove this warning")
     using output_type = float;
+
     encoder::sptr
     encoder::make(std::string message)
     {
       return gnuradio::make_block_sptr<encoder_impl>(message);
     }
 
-
-    /*
-     * The private constructor
-     */
     encoder_impl::encoder_impl(std::string message_text)
       : gr::sync_block("encoder",
               gr::io_signature::make(0, 0, 0),
@@ -38,32 +34,70 @@ namespace gr {
         generate_waveform();
     }
 
-    /*
-     * Our virtual destructor.
-     */
-    encoder_impl::~encoder_impl()
-    {
-    }
+    encoder_impl::~encoder_impl(){}
 
-    message::message_type encoder_impl::get_message_type()
+    message::message_type 
+    encoder_impl::get_message_type()
     {
         return d_message_obj.message_type_detection();
     }
 
-    const std::string& encoder_impl::get_processed_message()
+    const std::string& 
+    encoder_impl::get_processed_message()
     {
         return d_message_obj.get_message();
     }
-    void encoder_impl::generate_waveform()
+
+    std::vector<float>
+    encoder_impl::generate_rectangular_fsk(const std::vector<int>& symbols)
+    {
+      const int sample_rate = 48000;
+      const float baud_rate = 6.25f;
+      const float freq_shift = 6.25f;
+
+      int samples_per_symbol = sample_rate / static_cast<int>(baud_rate);
+      std::vector<float> fsk_signal(symbols.size() * samples_per_symbol, 0.0f);
+
+      for (size_t  i = 0; i < symbols.size(); ++i){
+        float freq_deviation = symbols[i] * freq_shift;
+
+        for (int j = 0; j < samples_per_symbol; ++j){
+          fsk_signal[i*samples_per_symbol + j] = freq_deviation;
+        }
+      }
+      d_logger->info("FSK signal generated");
+      return fsk_signal;
+    }
+
+    void 
+    encoder_impl::generate_waveform()
     {
         try {
+            d_logger->info("Starting waveform generation...");
+            
             ft8_encoder encoder;
             std::bitset<77> message_bits = encoder.encode_standard(d_message_obj);
-            d_waveform = encoder.encode_ft8_complete(message_bits);
+            d_logger->info("Message bits: {}", message_bits.to_string());
+            
+            std::bitset<91> crc = encoder.calc_crc(message_bits);
+            d_logger->info("CRC bits: {}", crc.to_string());
+            
+            std::bitset<174> ldpc = encoder.apply_ldpc(crc);
+            std::vector<int> symbols = encoder.bits_to_fsk8(ldpc);
+            d_logger->info("Generated {} symbols", symbols.size());
+            
+            std::vector<float> rectangular_fsk = generate_rectangular_fsk(symbols);
+            d_logger->info("Rectangular FSK size: {}", rectangular_fsk.size());
+            
+            // Check if waveform has actual values
+            if (!d_waveform.empty()) {
+                auto minmax = std::minmax_element(d_waveform.begin(), d_waveform.end());
+                d_logger->info("Waveform range: {} to {}", *minmax.first, *minmax.second);
+            }
+            
             d_waveform_generated = true;
-            d_logger->info("FT8 waveform generated with {} samples", d_waveform.size());
         } catch (const std::exception& e) {
-            d_logger->error(e.what());
+            d_logger->error("Exception in generate_waveform: {}", e.what());
             d_waveform_generated = false;
         }
     }
@@ -91,8 +125,20 @@ namespace gr {
             to_output++;
         }
       // Tell runtime system how many output items we produced.
+      }
       return to_output;
-    }
    }
   } /* namespace ft8 */
 } /* namespace gr */
+
+
+// std::vector<float>
+// encoder_impl::apply_gaussian_filter(const std::vector<float>& fsk_signal)
+// {
+//   if(!s_coefs_initialized){
+//     init_gaussian_coefs();
+//   }
+
+//   size_t output_size = fsk_signal.size() + s_gaussian_coefs.size() - 1;
+//   std::vector<float> filtered_signal(output_size, 0.0f);
+// }
