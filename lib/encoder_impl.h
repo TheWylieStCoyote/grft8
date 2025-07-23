@@ -9,7 +9,11 @@
 #define INCLUDED_FT8_ENCODER_IMPL_H
 
 #include <gnuradio/ft8/encoder.h>
+#include "message.h"
 #include <string>
+#include <vector>
+#include <algorithm>
+#include <bitset>
 
 namespace gr {
   namespace ft8 {
@@ -44,15 +48,23 @@ namespace gr {
         bool is_nonstd(const std::vector<std::string>& keywords);
 
     public:
-      encoder_impl(std::string message);
-      ~encoder_impl();
+        encoder_impl(std::string message);
+        ~encoder_impl();
+        message d_message_obj;
+        std::vector<float> d_waveform;
+        size_t d_sample_idx;
+        bool d_waveform_generated;
+        void generate_waveform();
+        std::vector<float> generate_rectangular_fsk(const std::vector<int>& symbols);
 
-      // Where all the action really happens
-      int work(
-              int noutput_items,
-              gr_vector_const_void_star &input_items,
-              gr_vector_void_star &output_items
-      );
+        message::message_type get_message_type();
+        const std::string& get_processed_message();
+
+        int work(
+                int noutput_items,
+                gr_vector_const_void_star &input_items,
+                gr_vector_void_star &output_items
+        );
     };
 
   } // namespace ft8

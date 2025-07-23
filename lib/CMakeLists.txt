@@ -12,7 +12,9 @@
 include(GrPlatform) #define LIB_SUFFIX
 
 list(APPEND ft8_sources
-    encoder_impl.cc)
+    encoder_impl.cc 
+    message.cc
+    ft8_encoder.cc)
 
 set(ft8_sources
     "${ft8_sources}"
@@ -55,7 +57,9 @@ include(GrTest)
 # If your unit tests require special include paths, add them here
 #include_directories()
 # List all files that contain Boost.UTF unit tests here
-list(APPEND test_ft8_sources)
+list(APPEND test_ft8_sources
+     qa_ft8_encoder.cc
+)
 # Anything we need to link to for the unit tests go here
 list(APPEND GR_TEST_TARGET_DEPS gnuradio-ft8)
 
@@ -66,4 +70,8 @@ endif(NOT test_ft8_sources)
 
 foreach(qa_file ${test_ft8_sources})
     gr_add_cpp_test("ft8_${qa_file}" ${CMAKE_CURRENT_SOURCE_DIR}/${qa_file})
+endforeach(qa_file)
+
+foreach(qa_file ${test_ft8_sources})
+    target_link_libraries(ft8_${qa_file} gnuradio-ft8)
 endforeach(qa_file)
