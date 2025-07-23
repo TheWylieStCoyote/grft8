@@ -50,7 +50,7 @@ namespace gr {
     {
         input_validation();
         message_type_detection();
-        d_logger->info("Preprocessed message: {}", d_message);	
+        d_logger->info("Preprocessed message: {}", d_message);
     }
 
     void encoder_impl::input_validation()
@@ -79,7 +79,7 @@ namespace gr {
 
         d_message = d_message.substr(start, end - start);
     }
-    
+
     void encoder_impl::character_validation()
     //only A-Z, 0-9, and / is allowed, no more than one consecutive space
     {
@@ -88,7 +88,7 @@ namespace gr {
         bool last_was_slash = false;
         for (size_t j = 0; j < d_message.length(); ++j){
             char c = d_message[j];
-            
+
             if (std::isalpha(c)){
                 c = std::toupper(c);
             }
@@ -96,29 +96,29 @@ namespace gr {
                 d_logger->error("Invalid character: {}", c);
                 return;
             }
-            if (!(last_was_space && c == ' ') && c != "/"){
+            if (!(last_was_space && c == ' ') && c != '/'){
                 d_message[i] = c;
                 i++;
-            }   
+            }
             last_was_space = (c == ' ');
-            last_was_slash = (c == "/");
+            last_was_slash = (c == '/');
         }
 
-        d_message.resize(i); 
+        d_message.resize(i);
     }
-    
+
     void encoder_impl::message_type_detection() //***add in UPPER LIMITS**
     //Keyword detection
     {
         std::istringstream stream(d_message);
         std::string input;
         std::vector<std::string> keywords;
-        
+
         while(stream >> input){
             keywords.push_back(input);
         }
-        
-       
+
+
         //message types
         enum class message_type{
             free_text, //0.0
@@ -132,13 +132,13 @@ namespace gr {
             nonstd_call, //4.0
             euvhfx, //5.0
             unknown
-        } 
-        
+        };
+
         message_type current_type = message_type::unknown;
 
         //if (keyword == "CQ" || keyword == "DE" || keyword == "QRZ"){}
         //***Standard and euvhf regular seem the same!! ***
-   
+
         if (is_dxpedition(keywords)){
             current_type = message_type::dxpedition;
         }
@@ -147,7 +147,7 @@ namespace gr {
         }
         else if (is_field_day(keywords, true)){ //more restricted due to R, so check first
             current_type = message_type::field_dayx;
-        }        
+        }
         else if (is_field_day(keywords, false)){
             current_type = message_type::field_day;
         }
@@ -162,11 +162,11 @@ namespace gr {
         }
         else if (is_nonstd(keywords)){
             current_type = message_type::nonstd_call;
-        }      
+        }
     }
-    
+
     bool encoder_impl::is_nonstd(const std::vector <std::string>& keywords)
-    {   
+    {
         has_nonstd = false;
         for (const auto& keyword : keywords){
             if (is_nonstd_callsign(keyword)){
@@ -174,13 +174,13 @@ namespace gr {
             }
         }
         return has_nonstd;
-    } 
+    }
 
     bool encoder_impl::is_euvhfx(const std::vector <std::string>& keywords)
     {
         has_callsigns = false;
         has_extended_grid = false;
-        
+
         for (const auto& keyword : keywords){
             if (is_callsign(keyword)){
                 has_callsigns = true;
@@ -191,11 +191,11 @@ namespace gr {
         }
         return has_callsigns && has_extended_grid;
     }
-    
+
     bool encoder_impl::is_rtty_ru(const std::vector<std::string>& keywords){
         bool has_callsigns = false;
         bool has_contest = false;
-        
+
         for (const auto& keyword : keywords){
             if (is_callsign(keyword)){
                 has_callsigns = true;
@@ -206,16 +206,16 @@ namespace gr {
         }
         return has_callsigns && has_contest;
     }
-    
+
     bool encoder_impl::is_contest(const std::string& keyword){
         std::regex contest(R"(^[0-9]{3}$)");
         return std::regex_match(keyword, contest);
     }
-    
+
     bool encoder_impl::is_std(const std::vector<std::string>& keywords){
         bool has_callsigns = false;
         bool has_grid = false;
-        
+
         for (const auto& keyword : keywords){
             if (is_callsign(keyword)){
                 has_callsigns = true;
@@ -228,7 +228,7 @@ namespace gr {
     }
 
     bool encoder_impl::is_field_day(const std::vector<std::string>& keywords, bool check_r)
-    {   
+    {
         bool has_callsigns = false;
         bool has_field_day_class = false;
         bool has_r = false;
@@ -244,7 +244,7 @@ namespace gr {
                 has_callsigns = true;
             }
         }
-        
+
         if (!has_callsigns || !has_field_day_class){
             return false;
         }
@@ -253,7 +253,7 @@ namespace gr {
         }
         return true;
     }
-    
+
     bool encoder_impl::is_field_day_class(const std::string& keyword)
     {
         std::regex fdclass(R"(^\d+[A-Z]$)");
@@ -262,7 +262,7 @@ namespace gr {
 
     bool encoder_impl::is_telemetry(const std::vector<std::string>& keywords)
     {
-        if (keywords.size == 1 && is_hex(keywords[0])){
+        if (keywords.size() == 1 && is_hex(keywords[0])){
             return true;
         }
         return false;
@@ -294,33 +294,33 @@ namespace gr {
         //+-nn
         if (keyword.size() == 3){
             static const std::regex sreport(R"(^[+-]\d{2}$)");
-            return std::regex_match(keyword, sreport);        
+            return std::regex_match(keyword, sreport);
         }
         return false;
     }
-    
+
     bool encoder_impl::is_callsign(const std::string& keyword)
     {
         //one-two character prefix, at least one is a letter
         //then a decimal digit, and a suffix up to three letters
-    
+
         static const std::regex callsign(R"(^[A-Z0-9]{1,2}[0-9][A-Z]{1,3}(?:/[A-Z0-9]{1,4})$)");
         return std::regex_match(keyword, callsign);
     }
-    
+
     bool encoder_impl::is_nonstd_callsign(const std::string& keyword)
     {
         static const std::regex prefix(R"(^[A-Z0-9]{2,4}/[A-Z0-9]{1,2}[A-Z]{1,3}$)");
         static const std::regex suffix(R"(^[A-Z0-9]{1,2}[0-9][A-Z]{1,3}/[A-Z0-9]{2,}$)");
         return std::regex_match(keyword, prefix) || std::regex_match(keyword, suffix);
     }
-    
+
     bool encoder_impl::is_grid_square(const std::string& keyword)
     {
         std::regex grid(R"(^[A-R]{2}[0-9]{2}$)");
         return std::regex_match(keyword, grid);
     }
-    
+
     bool encoder_impl::is_grid_6square(const std::string& keyword)
     {
         std::regex grid(R"(^[A-R]{2}[0-9]{2}[A-X]{2}$)");

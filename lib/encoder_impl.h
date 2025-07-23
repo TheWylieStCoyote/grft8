@@ -18,7 +18,10 @@ namespace gr {
     {
      private:
         std::string d_message;
-        
+        bool has_nonstd;
+        bool has_callsigns;
+        bool has_extended_grid;
+
         void preprocess_message();
         void input_validation();
         void trim();
@@ -39,7 +42,7 @@ namespace gr {
         bool is_grid_square(const std::string& keyword);
         bool is_grid_6square(const std::string& keyword);
         bool is_nonstd(const std::vector<std::string>& keywords);
-    
+
     public:
       encoder_impl(std::string message);
       ~encoder_impl();
